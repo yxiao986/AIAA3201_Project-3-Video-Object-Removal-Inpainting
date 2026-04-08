@@ -3,6 +3,7 @@ data/
 
 # Model outputs, generated masks, and inpainted videos
 results/
+third_party/
 *.mp4
 *.avi
 *.zip
