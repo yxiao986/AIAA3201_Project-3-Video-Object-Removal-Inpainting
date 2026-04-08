@@ -1,20 +1,18 @@
 # Project 3: Video Object Removal & Inpainting
 
-This repository contains the implementation for the Video Object Removal & Inpainting pipeline. Currently, it includes **Part 1: The Baseline Hand-crafted Approach**, which utilizes classic computer vision models to identify, mask, and remove dynamic objects from videos, followed by background restoration.
+This repository contains the implementation for the Video Object Removal & Inpainting pipeline. It includes a baseline hand-crafted approach and a state-of-the-art (SOTA) AI-driven pipeline to identify, mask, and remove dynamic objects from videos, followed by background restoration.
 
 ## Project Overview
 
 The core task of this project is to automatically remove dynamic objects (e.g., pedestrians, bicycles) from a video sequence and restore the missing background naturally. 
 
-**Part 1 Baseline Pipeline:**
-1. **Mask Extraction:** Uses a pre-trained **Mask R-CNN** (ResNet50 backbone) for initial semantic segmentation of dynamic classes.
-2. **Motion Filtering:** Applies **Lucas-Kanade Sparse Optical Flow** to calculate motion magnitude, effectively filtering out static objects. Dilation is applied to the final mask to cover motion blur.
-3. **Video Inpainting:** Employs **Temporal Background Propagation** to borrow clean pixels from adjacent frames. For any remaining occlusions, it falls back to OpenCV's spatial inpainting (Navier-Stokes algorithm).
+* **Part 1: Baseline Pipeline:** Uses **Mask R-CNN** for segmentation, **Optical Flow** for motion filtering, and **Temporal Background Propagation** with spatial fallback for inpainting.
+* **Part 2: SOTA Reproduction:** Integrates foundation models. Uses **Track Anything** (Segment Anything + XMem) for zero-shot dynamic object tracking and masking, followed by **ProPainter** (Dual-domain Propagation + Sparse Transformer) for high-fidelity video inpainting.
 
 ## Environment Setup
 
-It is recommended to run this project in an Anaconda virtual environment. The dependencies are lightweight and can be executed smoothly on a local machine (Ubuntu/Windows).
 
+### Setting up Part 1 (Lightweight)
 ```bash
 # Create and activate a clean Conda environment
 conda create -n cv_proj3 python=3.10 -y
@@ -23,20 +21,44 @@ conda activate cv_proj3
 # Install required packages
 pip install torch torchvision opencv-python numpy tqdm scikit-image
 ```
+### Setting up Part 2 (SOTA Models)
+Since Part 2 utilizes heavy models, you need to clone the official repositories and download their respective pre-trained weights.
+#### 1. Clone Repositories:
+```Bash
+cd part2_sota
+mkdir third_party
+cd third_party
+git clone https://github.com/gaomingqi/Track-Anything.git
+git clone https://github.com/sczhou/ProPainter.git
+```
+#### 2. Download Weights:
+**ProPainter**: Follow instructions in their official repo to download the weights (`ProPainter.pth`, `raft-things.pth`, `i3d_rgb_imagenet.pt`) and place them in `third_party/ProPainter/weights/`.
+
+**Track Anything**: Download SAM weights (`sam_vit_b_01ec64.pth`) and XMem weights (`XMem-s012.pth`) and place them in `third_party/Track-Anything/checkpoints/`.
+
+#### 3. Conda Environment:
+```Bash
+# It is recommended to use the same environment or ensure all dependencies are met
+pip install -r third_party/Track-Anything/requirements.txt
+pip install -r third_party/ProPainter/requirements.txt
+```
+
+
 ## Repository Structure
 ```Plaintext
 PROJECT3/
 ├── data/                       # Datasets directory
 │   ├── bmx-trees/              # Raw frames for BMX sequence
-│   ├── bmx-trees_mask/         # Ground Truth masks for BMX
-│   ├── tennis/                 # Raw frames for Tennis sequence
-│   ├── tennis_mask/            # Ground Truth masks for Tennis
-│   ├── wild_video/             # Self-captured custom video frames
-│   └── DAVIS/                  # Standard DAVIS dataset (optional)
+│   └── ...                     # Other datasets
 ├── part1_baseline/             # Code for Part 1
-│   ├── main.py                 # Pipeline controller & CLI entry point
+│   ├── main.py                 # Pipeline controller
 │   ├── mask_extractor.py       # Mask R-CNN & Optical Flow logic
-│   └── inpainter.py            # Temporal Propagation & Spatial Inpainting
+│   └── inpainter.py            # Temporal & Spatial Inpainting
+├── part2_sota/                 # Code for Part 2
+│   └── main.py                 # SOTA Orchestration Script
+├── third_party/                # Cloned SOTA repositories (NOT pushed to Git)
+│   ├── Track-Anything/         
+│   └── ProPainter/             
 ├── utils/
 │   └── metrics.py              # Evaluation metrics (J_M, J_R, PSNR, SSIM)
 └── results/                    # Output directory for generated artifacts
@@ -105,39 +127,6 @@ After running the commands, check the `../results/part1_baseline/[dataset_name]/
 -`third_party/Track-Anything/run_tracking.py`: A custom automated wrapper script we implemented that bypasses the Gradio UI. It feeds a bounding box prompt to SAM for the first frame and propagates the mask across the video using XMem.
 
 -`part2_sota/main.py`: The orchestration script. It triggers the `run_tracking`.py process, evaluates the mask quality against Ground Truth, and then routes the raw frames and high-quality masks into ProPainter's inference engine for robust video inpainting.
-
-### Third-party Setup & Weights
-To run the SOTA pipeline, you must manually prepare the following:
-
-#### 1. Clone Repositories:
-```Bash
-cd part2_sota
-mkdir third_party
-cd third_party
-git clone https://github.com/gaomingqi/Track-Anything.git
-git clone https://github.com/sczhou/ProPainter.git
-```
-#### 2. Download Weights:
-Create folders for weights and download them from the official links provided in their repositories.
-
-**For Track Anything**:
-
-Path: third_party/Track-Anything/checkpoints/
-
-Files: sam_vit_b_01ec64.pth, XMem-s012.pth.
-
-**For ProPainter**:
-
-Path: third_party/ProPainter/weights/
-
-Files: ProPainter.pth, raft-things.pth, recurrent_flow_completion.pth.
-
-#### 3. Conda Environment:
-```Bash
-# It is recommended to use the same environment or ensure all dependencies are met
-pip install -r third_party/Track-Anything/requirements.txt
-pip install -r third_party/ProPainter/requirements.txt
-```
 
 ### How to Run
 Navigate to the `part2_sota` directory before executing:
