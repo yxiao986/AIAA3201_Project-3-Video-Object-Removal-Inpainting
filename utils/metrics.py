@@ -13,9 +13,8 @@ def calculate_iou(pred_mask, gt_mask):
     Returns:
         float: IoU score between 0.0 and 1.0.
     """
-    # Ensure masks are boolean
-    pred_bool = pred_mask > 127
-    gt_bool = gt_mask > 127
+    pred_bool = pred_mask > 0
+    gt_bool = gt_mask > 0
     
     intersection = np.logical_and(pred_bool, gt_bool).sum()
     union = np.logical_or(pred_bool, gt_bool).sum()

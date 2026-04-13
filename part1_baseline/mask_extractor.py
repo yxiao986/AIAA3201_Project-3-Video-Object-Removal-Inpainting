@@ -3,12 +3,13 @@ import numpy as np
 import torch
 import torchvision
 from torchvision.transforms import functional as F
+from torchvision.models.detection import MaskRCNN_ResNet50_FPN_Weights
 
 class MaskExtractor:
     def __init__(self, device='cuda' if torch.cuda.is_available() else 'cpu'):
         self.device = device
         # Load a pre-trained Mask R-CNN model (ResNet50 backbone)
-        self.model = torchvision.models.detection.maskrcnn_resnet50_fpn(pretrained=True)
+        self.model = torchvision.models.detection.maskrcnn_resnet50_fpn(weights=MaskRCNN_ResNet50_FPN_Weights.DEFAULT)
         self.model.to(self.device)
         self.model.eval()
         

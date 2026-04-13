@@ -123,36 +123,69 @@ After running the commands, check the `../results/part1_baseline/[dataset_name]/
 - 
 ## Part 2: SOTA Reproduction
 
-### Code Explanation
--`third_party/Track-Anything/run_tracking.py`: A custom automated wrapper script we implemented that bypasses the Gradio UI. It feeds a bounding box prompt to SAM for the first frame and propagates the mask across the video using XMem.
+This section utilizes foundation models to handle complex tracking scenarios (e.g., occlusion, motion blur) and performs high-fidelity video inpainting. 
 
--`part2_sota/main.py`: The orchestration script. It triggers the `run_tracking`.py process, evaluates the mask quality against Ground Truth, and then routes the raw frames and high-quality masks into ProPainter's inference engine for robust video inpainting.
+To ensure the highest mask quality ($\mathcal{J}_M$ and $\mathcal{J}_R$), we employ an **Interactive-to-Automated Workflow**: User interaction is only required for the first frame via a Web UI, and the model automatically propagates the mask for the remaining frames.
+
+### Code Architecture
+- `part2_sota/main.py`: The main orchestration script that evaluates mask quality and executes the video inpainting engine.
+- `third_party/Track-Anything/app.py`: The official Gradio UI used to obtain the initial high-precision prompt.
+- `third_party/ProPainter/inference_propainter.py`: SOTA video inpainting engine.
 
 ### How to Run
-Navigate to the `part2_sota` directory before executing:
-```Bash
-cd part2_sota
-```
-#### 1. Tennis / BMX Datasets (With Evaluation)
-You need to provide an initial bounding box prompt (x1,y1,x2,y2) for the object you want to remove in the first frame.
-```Bash
-python main.py \
-    --dataset_name tennis \
-    --data_dir ../data/tennis \
-    --gt_mask_dir ../data/tennis_mask \
-    --output_base_dir ../results/part2_sota \
-    --track_prompt "100,150,300,450"  # Adjust bounding box based on the specific video
+
+#### Step 0: Data Preparation (Image to Video)
+The Track-Anything UI requires a single video file (.mp4) for input. Use the provided script to convert the image sequence of a dataset into a video:
+
+```bash
+# For tennis dataset
+python make_video.py --input_dir data/tennis --output_file data/tennis.mp4
+
+# For bmx-trees dataset
+python make_video.py --input_dir data/bmx-trees --output_file data/bmx-trees.mp4
 ```
 
-#### 2. Wild Video (No Evaluation)
-```Bash
-python main.py \
-    --dataset_name wild_video \
-    --data_dir ../data/wild_video \
-    --output_base_dir ../results/part2_sota \
-    --track_prompt "auto"  # Or provide specific bbox coordinates
+#### Step 1: Interactive Mask Generation
+Open a terminal and launch the Track-Anything Web UI:
+```bash
+cd third_party/Track-Anything
+python app.py --sam_model_type vit_b --device cuda:0`
 ```
-*Note: If the automated track_prompt does not yield perfect masks, it is highly recommended to run `third_party/Track-Anything/app.py`, manually click the object using their interactive UI, save the masks to `results/part2_sota/[dataset]/masks/`, and re-run our pipeline.*
+1. Open your browser to the local URL provided in the terminal (usually `http://127.0.0.1:12212`).
+2. Upload your target video frames (e.g., `data/tennis`.
+3. Click on the target object (e.g., the tennis player) in the first frame
+4. Click "Add new object", then click "Tracking".
+5. Once tracking is 100% complete, manually move all the generated `.png` mask files from `third_party/Track-Anything/result/mask/tennis/` to your project's target directory: `results/part2_sota/tennis/masks/`.
+
+#### Step 2: Evaluation & Inpainting
+Once the masks are saved, open a new terminal and run the main orchestration script:
+```Bash
+# Return to the project root
+python part2_sota/main.py --dataset_name tennis --data_dir data/tennis --gt_mask_dir data/tennis_mask
+```
+*The pipeline will automatically apply mask dilation, compute J_M and J_R metrics, and save the final inpainted video frames to `results/part2_sota/tennis/inpainted/`.*
+
+### ⚠️ Bug Fix in Track-Anything (app.py)
+
+The modern `torchvision.io.write_video` function in `app.py` relies on deprecated versions of the `av` package (`<10.0.0`), which no longer have pre-compiled binaries available on PyPI, leading to Cython compilation crashes on Windows.
+
+To resolve this without altering the environment requirements, **we reverted to the author's original (commented out) OpenCV implementation** for video generation (around line 347 in `app.py`), with an added RGB-to-BGR color channel conversion to prevent color inversion:
+
+```python
+# Reverted and patched video generation function:
+def generate_video_from_frames(frames, output_path, fps=30):
+    import cv2, os, np
+    if not os.path.exists(os.path.dirname(output_path)):
+        os.makedirs(os.path.dirname(output_path))
+    height, width, _ = frames[0].shape
+    video = cv2.VideoWriter(output_path, cv2.VideoWriter_fourcc(*"mp4v"), int(fps), (width, height))
+    for frame in frames:
+        # Added RGB2BGR conversion
+        video.write(cv2.cvtColor(np.array(frame), cv2.COLOR_RGB2BGR))
+    video.release()
+    return output_path
+```
+
 
 ### Outputs & Artifacts
 After running the commands, check the `../results/part2_sota/[dataset_name]/` directory. You will find:

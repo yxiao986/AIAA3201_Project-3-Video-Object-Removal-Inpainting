@@ -4,6 +4,7 @@ data/
 # Model outputs, generated masks, and inpainted videos
 results/
 third_party/
+!third_party/Track-Anything/run_tracking.py
 *.mp4
 *.avi
 *.zip
