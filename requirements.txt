@@ -1,15 +1,13 @@
-# 1. 核心与基础库 
+
 torch==2.0.1
 torchvision==0.15.2
 numpy==1.23.5
 opencv-python==4.8.0.76
 scikit-image==0.21.0
 
-# 2. 视频与媒体处理
 imageio==2.34.2
 decord==0.6.0
 
-# 3. 大模型与生成式 AI 
 diffusers==0.28.2
 transformers==4.44.0
 accelerate==0.32.1
@@ -18,7 +16,7 @@ safetensors
 einops>=0.6.1
 omegaconf>=2.3.0
 
-# 4. Web UI 与底层构建
 gradio==3.40.1
 setuptools<81.0
-mmcv>=2.0.0
+--find-links https://download.openmmlab.com/mmcv/dist/cu118/torch2.0/index.html
+mmcv==2.0.1

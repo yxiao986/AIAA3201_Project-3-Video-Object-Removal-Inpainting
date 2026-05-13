@@ -105,14 +105,17 @@ python main.py \
     --output_base_dir ../results/part1_baseline
 ```
 
-#### 4. DAVIS Dataset (Optional / High-Score Attempt)
-To evaluate on a specific sequence (e.g., `skate-jump`) from the standard DAVIS dataset, ensure the data is structured correctly and point the directories to the specific sequence.
+#### 4. DAVIS Dataset Full Evaluation (Batch Processing)
+To rigorously evaluate the accuracy of our baseline extraction algorithm across the entire standard benchmark, we provide a batch processing script. This script automatically iterates through all available video sequences in the `data/DAVIS/JPEGImages/480p` directory, generates dynamic masks, compares them against the `Annotations/480p` directory, and computes the global average $\mathcal{J}_M$ and $\mathcal{J}_R$ metrics for the dataset.
+
 ```bash
-python main.py \
-    --dataset_name DAVIS_skate-jump \
-    --data_dir ../data/DAVIS/JPEGImages/480p/skate-jump \
-    --gt_mask_dir ../data/DAVIS/Annotations/480p/skate-jump \
-    --output_base_dir ../results/part1_baseline
+python run_davis.py \
+    --davis_root ../data/DAVIS \
+    --output_dir ../results/part1_davis_eval`
+```
+Note on Inpainting: By default, this script skips the restoration (inpainting) phase to prioritize fast mask evaluation across dozens of videos. If you wish to run the full spatial-temporal inpainting for the entire dataset, add the --run_inpainting flag:
+```bash
+python run_davis.py --davis_root ../data/DAVIS --run_inpainting
 ```
 
 ### Outputs & Artifacts
@@ -131,6 +134,7 @@ To ensure the highest mask quality ($\mathcal{J}_M$ and $\mathcal{J}_R$), we emp
 - `part2_sota/main.py`: The main orchestration script that evaluates mask quality and executes the video inpainting engine.
 - `third_party/Track-Anything/app.py`: The official Gradio UI used to obtain the initial high-precision prompt.
 - `third_party/ProPainter/inference_propainter.py`: SOTA video inpainting engine.
+- `utils/make_video.py`: script to convert the image sequence of a dataset into a video.
 
 ### How to Run
 
@@ -139,17 +143,18 @@ The Track-Anything UI requires a single video file (.mp4) for input. Use the pro
 
 ```bash
 # For tennis dataset
-python make_video.py --input_dir data/tennis --output_file data/tennis.mp4
+python utils/make_video.py --input_dir data/tennis --output_file data/tennis.mp4
 
 # For bmx-trees dataset
-python make_video.py --input_dir data/bmx-trees --output_file data/bmx-trees.mp4
+python utils/make_video.py --input_dir data/bmx-trees --output_file data/bmx-trees.mp4
 ```
 
 #### Step 1: Interactive Mask Generation
-Open a terminal and launch the Track-Anything Web UI:
+
+To prevent common SSL certification errors caused by local proxy settings and Gradio's telemetry network calls, we have provided a safe launcher script. 
+Launch the UI by running:
 ```bash
-cd third_party/Track-Anything
-python app.py --sam_model_type vit_b --device cuda:0`
+python part2_sota/launch_ui.py
 ```
 1. Open your browser to the local URL provided in the terminal (usually `http://127.0.0.1:12212`).
 2. Upload your target video frames (e.g., `data/tennis`.
@@ -193,6 +198,57 @@ After running the commands, check the `../results/part2_sota/[dataset_name]/` di
 - `inpainted/`: The final restored video frames.
 - `metrics.json`: A JSON file containing the calculated evaluation metrics ($\mathcal{J}_M$ and $\mathcal{J}_R$) for the sequence (only generated if `--gt_mask_dir` was provided).
 
+### Advanced: End-to-End Interactive Evaluation on DAVIS Subset
+
+The SOTA tracking pipeline (Track-Anything) is fundamentally designed as an **Interactive VOS (Video Object Segmentation)** framework. It requires a human-in-the-loop click to initialize zero-shot tracking.
+
+To demonstrate its real-world effectiveness without the impracticality of manually clicking through all 50 DAVIS sequences, we have implemented a **Representative Subset Evaluation Strategy**. We selected highly challenging sequences characterized by heavy occlusion and fast motion (e.g., `dog`) to evaluate the interactive tracking precision ($\mathcal{J}_M$ and $\mathcal{J}_R$) and final inpainting quality.
+
+#### Step-by-Step Reproduction Guide (Route A: Interactive Flow)
+
+To reproduce our results on the challenging subset, please follow these exact steps to bridge the interactive UI and our automated evaluation script:
+
+**1. Prepare the Video Input**
+Track-Anything UI requires `.mp4` video inputs. Use our provided script to convert the DAVIS image sequences into videos and put it under the same folder as the data:
+```bash
+python utils/make_video.py --input_folder data/DAVIS/JPEGImages/480p/dog --fps 24
+```
+**2. Interactive Tracking via Web UI**
+Launch the Track-Anything Gradio application:
+
+
+```bash
+python part2_sota/launch_ui.py
+```
+
+- Open the provided local URL in your browser.
+
+- Upload dog.mp4.
+
+- Click on the target object (e.g., the dog) in the first frame.
+
+- Click "Tracking" and wait for the process to complete. (Note: it may show 'error' in the website, but mask should already been successfully generated)
+
+**3. Manual Mask Transfer (Crucial Step)**
+Once tracking is finished, Track-Anything saves the raw mask frames internally. You must manually route them to our evaluation directory:
+
+* Navigate to: third_party/Track-Anything/result/mask/dog/
+
+* Move/Copy ALL .png mask files to our project's designated output folder (create it if it doesn't exist):
+results/part2_davis_eval/dog/masks/
+
+**4. Execute the Decoupled Evaluation & Inpainting**
+Now that the interactive masks are in place, return to the project root and run our subset evaluation script. This script will compute the mask metrics against DAVIS Ground Truth, apply boundary dilation, and trigger the downstream ProPainter engine:
+
+```bash
+cd part2_sota
+python run_davis_subset.py \
+    --davis_root ../data/DAVIS \
+    --target_seqs dog
+```
+
+The final SOTA inpainted video frames and the tracking evaluation metrics (track_anything_subset_metrics.json) will be generated inside results/part2_davis_eval/dog/.
+
 ## Part 3: Exploration - Generative Video Inpainting
 
 In this exploration phase, we attempt to address the limitations of pure propagation-based inpainting models (like ProPainter) by introducing Generative AI (Stable Diffusion). The core idea is to generatively repair missing keyframes and use the "Injection Trick" to propagate these high-fidelity hallucinations to adjacent frames.
@@ -203,6 +259,7 @@ We designed a **Dual-Track Evaluation Pipeline**:
 
 ### Code Explanation
 - `part3_exploration/main.py`: The orchestrator script. It provides arguments to seamlessly switch between Qualitative and Quantitative evaluation tracks, manages isolated workspaces, and extracts specific frames for direct metric comparison.
+- `part3_exploration/run_davis.py`: The batch processing evaluator. It iterates through the DAVIS dataset, injects GT masks, applies boundary dilation, and runs side-by-side upper-bound comparisons.
 - `utils/diffusion_utils.py`: Contains the `run_sd_inpainting` function. It executes the Stable Diffusion pipeline and implements **Pre-Generation Dilation** (to avoid motion blur residues) and **Gaussian Feathering Blending** to soften the hard edges of generative patches.
 - `utils/mask_utils.py`: Generates the random stationary masks (combinations of strokes and circles) used exclusively for the quantitative evaluation track.
 
@@ -212,19 +269,60 @@ Navigate to the project root directory before executing.
 **1. Qualitative Evaluation (Visual Testing with Dynamic Masks)**
 For `tennis`:
 ```bash
+这里为你整理了全新、完整且逻辑完美闭环的 Part 3 README 部分。
+
+这段内容直接替换你 README.md 中原有的 ## Part 3: Exploration - Generative Video Inpainting 及其之后的所有内容。它整合了我们刚才优化的所有亮点：解耦的命令行参数控制、DiffuEraser 的防爆环境配置，以及最王炸的 DAVIS GT 上限评测（Upper-Bound Evaluation）。
+
+你可以直接复制以下 Markdown 代码：
+
+Markdown
+## Part 3: Exploration - Generative Video Inpainting
+
+In this exploration phase, we attempt to address the limitations of pure propagation-based inpainting models (like ProPainter) by introducing Generative AI (Stable Diffusion & DiffuEraser). The core idea is to generatively repair missing backgrounds and leverage deep semantic understanding for complex occlusion scenarios.
+
+We designed a **Comprehensive Evaluation Pipeline** consisting of two main components:
+1. **Dual-Track Evaluation (Single Sequence):**
+   * **Qualitative Track (Dynamic Mask):** Uses GT dynamic masks to evaluate visual harmony and semantic coherence.
+   * **Quantitative Track (Stationary Mask):** Uses synthetically generated random stationary masks on clean videos to force "information starvation" and evaluate structural similarity (SSIM) and peak signal-to-noise ratio (PSNR).
+2. **GT-Injection Upper-Bound Evaluation (DAVIS Dataset):** Decouples tracking errors by injecting pure Ground Truth masks across the entire dataset to test the absolute performance ceiling of the models.
+
+### Code Explanation
+- `part3_exploration/main.py`: The single-sequence orchestrator. It manages isolated workspaces and provides arguments to seamlessly switch between Qualitative/Quantitative tracks and targeted models (`--method baseline | sd2d | diffueraser`).
+- `part3_exploration/run_davis.py`: The batch processing evaluator. It iterates through the DAVIS dataset, injects GT masks, applies boundary dilation, and runs side-by-side upper-bound comparisons.
+- `utils/diffusion_utils.py`: Contains the 2D Stable Diffusion pipeline featuring **Pre-Generation Dilation** and **Gaussian Feathering Blending**.
+- `utils/mask_utils.py`: Generates the random stationary masks used for the quantitative evaluation track.
+
+---
+
+### Phase 3.1: Dual-Track Evaluation (Single Video)
+
+Navigate to the project root directory before executing. The pipeline is fully decoupled, meaning you must specify which model to evaluate using the `--method` argument.
+
+**1. Qualitative Evaluation (Visual Testing with Dynamic Masks)**
+```bash
+# Evaluate the Traditional Baseline (Pure ProPainter):
 python part3_exploration/main.py \
-  --dataset_name tennis \
-  --prompt "a clean tennis court, clay ground" \
-  --gt_data_dir data/tennis \
-  --gt_mask_dir data/tennis_mask
+  --dataset_name bmx-trees \
+  --gt_data_dir data/bmx-trees \
+  --gt_mask_dir data/bmx-trees_mask \
+  --method baseline
+
+# Evaluate the Generative Approach (SD2D + ProPainter):
+python part3_exploration/main.py \
+  --dataset_name bmx-trees \
+  --prompt "a clean graffiti wall" \
+  --gt_data_dir data/bmx-trees \
+  --gt_mask_dir data/bmx-trees_mask \
+  --method sd2d
 ```
 
 **2. Quantitative Evaluation (Metric Testing with Stationary Masks)**
 ```Bash
 python part3_exploration/main.py \
-  --dataset_name tennis_clean \
-  --prompt "a clean tennis court, clay ground" \
-  --clean_data_dir data/tennis_clean
+  --dataset_name bmx-trees \
+  --prompt "a clean graffiti wall" \
+  --clean_data_dir data/bmx-trees \
+  --method sd2d
   ```
 
 ### Outputs & Artifacts
@@ -282,9 +380,6 @@ Execution Command (Example on BMX-Trees):
 ```bash
 python part3_exploration/main.py \
   --dataset_name bmx-trees \
-  --prompt "a clean graffiti wall" \
-  --gt_data_dir data/bmx-trees \
-  --gt_mask_dir data/bmx-trees_mask \
   --clean_data_dir data/bmx-trees \
   --method diffueraser
 ```
@@ -296,3 +391,30 @@ python part3_exploration/main.py \
 | | Ours (SD + ProPainter) | 20.45 | 0.6758 |
 | **BMX-Trees** | Baseline (Pure ProPainter) | **25.76** | **0.8544** |
 | | Ours (SD + ProPainter) | 19.66 | 0.5609 |
+
+### DAVIS Dataset Evaluation
+Execution Command (Batch Processing):
+```bash
+# Run Baseline (ProPainter) on specific representative sequences:
+python part3_exploration/run_davis.py \
+    --davis_root data/DAVIS \
+    --target_seqs camel drift-chicane \
+    --method baseline
+
+# Run DiffuEraser on the exact same sequences for side-by-side comparison:
+python part3_exploration/run_davis.py \
+    --davis_root data/DAVIS \
+    --target_seqs camel drift-chicane \
+    --method diffueraser
+```
+
+*(Warning: Running DiffuEraser on the entire 50-video dataset without the --target_seqs flag is extremely VRAM and time-intensive).*
+
+#### Outputs & Artifacts:
+For every evaluated sequence, the script creates a direct comparative workspace under results/part3_davis_eval/[seq_name]/:
+
+- gt_masks_dilated/: The pre-processed truth masks used for the controlled experiment.
+
+- baseline/: The upper-bound limit of pure temporal propagation.
+
+- diffueraser/: The upper-bound limit of conditional video diffusion.

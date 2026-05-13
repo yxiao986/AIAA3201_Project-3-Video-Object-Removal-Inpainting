@@ -19,7 +19,7 @@ from utils.mask_utils import generate_random_stationary_mask, save_stationary_ma
 from utils.metrics import evaluate_video_quality
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Part 3: Dual-Track Evaluation with 4 Generative Methods")
+    parser = argparse.ArgumentParser(description="Part 3: Generative Evaluation Pipeline")
     parser.add_argument("--dataset_name", type=str, required=True, help="e.g., tennis")
     parser.add_argument("--prompt", type=str, default=None, help="Prompt for Generative Models")
     
@@ -28,8 +28,8 @@ def parse_args():
     parser.add_argument("--clean_data_dir", type=str, default=None, help="Path to clean GT video frames for metrics")
     parser.add_argument("--n_keyframes", type=int, default=3, help="Number of SD keyframes (default: 3)")
     
-    parser.add_argument("--method", type=str, choices=['sd2d','diffueraser'], default='sd2d',
-                        help="Choose the generative prior method.")
+    parser.add_argument("--method", type=str, choices=['baseline', 'sd2d', 'diffueraser'], default='diffueraser',
+                        help="Choose the model to run: baseline (ProPainter), sd2d, or diffueraser.")
                         
     parser.add_argument("--output_base_dir", type=str, default=os.path.join(project_root_dir, "results", "part3_evaluation"))
     return parser.parse_args()
@@ -49,8 +49,6 @@ def run_propainter(data_dir, mask_dir, output_dir):
     except subprocess.CalledProcessError as e:
         print(f"[Error] ProPainter execution failed: {e}")
 
-
-# [新增] 获取视频真实 FPS 的助手
 def get_video_fps(video_path):
     if not os.path.exists(video_path): return 30.0
     cap = cv2.VideoCapture(video_path)
@@ -58,50 +56,39 @@ def get_video_fps(video_path):
     cap.release()
     return fps if fps > 0 else 30.0
 
-# [更新] 带有动态 FPS 支持的合帧函数
 def generate_video_from_frames(frame_dir, output_path, target_fps=30.0):
     if os.path.exists(output_path):
         return True
-        
-    print(f"      -> [Auto-Fix] 正在将 {frame_dir} 自动合成为视频: {output_path} (精准同步 FPS: {target_fps:.2f}) ...")
+    print(f"      -> [Auto-Fix] Compiling frames to video: {output_path} (FPS: {target_fps:.2f}) ...")
     frames = sorted(glob.glob(os.path.join(frame_dir, "*.[pj][np][g]")))
     if not frames:
-        print(f"❌ [Error] 目录 {frame_dir} 为空，无法生成视频。")
+        print(f"[Error] Directory {frame_dir} is empty.")
         return False
         
     img = cv2.imread(frames[0])
     height, width, _ = img.shape
-    # 使用传入的 target_fps 而不是写死的 30
     video = cv2.VideoWriter(output_path, cv2.VideoWriter_fourcc(*"mp4v"), float(target_fps), (width, height))
     for frame_path in frames:
         video.write(cv2.imread(frame_path))
     video.release()
     return True
 
-
-
 def run_diffueraser_inference(data_dir, mask_dir, output_dir):
     diffueraser_dir = os.path.join(project_root_dir, "third_party", "DiffuEraser")
     if not os.path.isdir(diffueraser_dir):
-        raise FileNotFoundError("DiffuEraser not found. Please clone it to third_party/DiffuEraser.")
+        raise FileNotFoundError("DiffuEraser not found. Please clone it.")
     
     diffueraser_script = os.path.join(diffueraser_dir, "run_diffueraser.py") 
-    
     clean_data_dir = os.path.normpath(data_dir)
     clean_mask_dir = os.path.normpath(mask_dir)
     input_video_mp4 = f"{clean_data_dir}.mp4"
     input_mask_mp4 = f"{clean_mask_dir}.mp4"
     
-    # 1. 确保原视频存在（如果没有，按默认 30 帧生成）
     if not generate_video_from_frames(clean_data_dir, input_video_mp4, target_fps=30.0): return
-    
-    # 2. [核心修复] 读取原视频的真实 FPS！
     real_fps = get_video_fps(input_video_mp4)
-    
-    # 3. 使用与原视频完全一致的 FPS 生成 Mask 视频
     if not generate_video_from_frames(clean_mask_dir, input_mask_mp4, target_fps=real_fps): return
 
-    print("\n      -> [DiffuEraser] 开始原生推理 (依靠本地 weights 文件夹)...")
+    print("\n      -> [DiffuEraser] Starting native inference...")
     try:
         subprocess.run([
             sys.executable, diffueraser_script,
@@ -139,18 +126,15 @@ def run_pipeline(data_dir, mask_dir, output_dir, dataset_name, prompt, n_keyfram
     mask_files = sorted(glob.glob(os.path.join(mask_dir, "*.png")))
     total_frames = len(img_files)
 
-   
-    baseline_out_dir = os.path.join(output_dir, "baseline_propainter")
-    generative_out_dir = os.path.join(output_dir, f"ours_{method}") 
-    os.makedirs(baseline_out_dir, exist_ok=True)
-    os.makedirs(generative_out_dir, exist_ok=True)
+    method_out_dir = os.path.join(output_dir, method) 
+    os.makedirs(method_out_dir, exist_ok=True)
 
-    print(f"      -> Running Baseline ProPainter (Control Group)...")
-    run_propainter(data_dir, mask_dir, baseline_out_dir)
-
-    print(f"      -> Executing Generative Prior: [{method.upper()}]...")
+    print(f"      -> Executing Method: [{method.upper()}]...")
     
-    if method == 'sd2d':
+    if method == 'baseline':
+        run_propainter(data_dir, mask_dir, method_out_dir)
+        
+    elif method == 'sd2d':
         injected_data_dir = os.path.join(output_dir, "sd_injected_frames")
         injected_mask_dir = os.path.join(output_dir, "sd_injected_masks")
         os.makedirs(injected_data_dir, exist_ok=True)
@@ -172,28 +156,27 @@ def run_pipeline(data_dir, mask_dir, output_dir, dataset_name, prompt, n_keyfram
                 shutil.copy(img_path, img_out_path)
                 shutil.copy(mask_path, mask_out_path)
         
-        run_propainter(injected_data_dir, injected_mask_dir, generative_out_dir)
+        run_propainter(injected_data_dir, injected_mask_dir, method_out_dir)
         
     elif method == 'diffueraser':
-        run_diffueraser_inference(data_dir, mask_dir, generative_out_dir)
+        run_diffueraser_inference(data_dir, mask_dir, method_out_dir)
 
-    return baseline_out_dir, generative_out_dir, total_frames
+    return method_out_dir, total_frames
 
 def main():
     args = parse_args()
     print(f"\n{'='*70}\nPart 3: Generative Evaluation Pipeline [{args.dataset_name} | {args.method.upper()}]\n{'='*70}")
     
- 
     method_base_dir = os.path.join(args.output_base_dir, args.dataset_name, args.method)
     
     if args.gt_data_dir and args.gt_mask_dir:
         print("\n>>> Starting Qualitative Evaluation (Dynamic Masking) <<<")
         qualitative_out_dir = os.path.join(method_base_dir, "qualitative")
-        base_dir, gen_dir, _ = run_pipeline(
+        out_dir, _ = run_pipeline(
             args.gt_data_dir, args.gt_mask_dir, qualitative_out_dir, 
             args.dataset_name, args.prompt, args.n_keyframes, args.method, is_stationary=False
         )
-        print(f" [Success] Visual results saved. Check Baseline: {base_dir} | Ours: {gen_dir}")
+        print(f" [Success] Visual results saved at: {out_dir}")
     
     if args.clean_data_dir:
         print("\n>>> Starting Quantitative Evaluation (Stationary Masking) <<<")
@@ -207,25 +190,22 @@ def main():
         stationary_mask_dir = os.path.join(quant_out_dir, "stationary_masks")
         save_stationary_mask_sequence(stat_mask, stationary_mask_dir, len(clean_img_files), [os.path.basename(f) for f in clean_img_files])
 
-        base_dir, gen_dir, total_frames = run_pipeline(
+        out_dir, total_frames = run_pipeline(
             args.clean_data_dir, stationary_mask_dir, quant_out_dir, 
             args.dataset_name, args.prompt, args.n_keyframes, args.method, is_stationary=True
         )
 
         gt_frames = load_frames_from_dir(args.clean_data_dir)
-        baseline_frames = extract_frames_from_propainter_output(base_dir, total_frames)
-        generative_frames = extract_frames_from_propainter_output(gen_dir, total_frames)
+        pred_frames = extract_frames_from_propainter_output(out_dir, total_frames)
 
-        if len(gt_frames) == len(baseline_frames) == len(generative_frames) > 0:
-            metrics = {
-                "Baseline_Pure_ProPainter": evaluate_video_quality(baseline_frames, gt_frames),
-                f"Ours_{args.method.upper()}": evaluate_video_quality(generative_frames, gt_frames)
-            }
+        if len(gt_frames) == len(pred_frames) > 0:
+            res = evaluate_video_quality(pred_frames, gt_frames)
+            metrics = { f"Ours_{args.method.upper()}": res }
+            
             print("\n" + "="*40)
-            print(f" 🏆 Quantitative Results ({args.method.upper()})")
+            print(f" Quantitative Results ({args.method.upper()})")
             print("="*40)
-            print(f"Baseline (ProPainter): PSNR: {metrics['Baseline_Pure_ProPainter']['PSNR']:.2f}, SSIM: {metrics['Baseline_Pure_ProPainter']['SSIM']:.4f}")
-            print(f"Ours ({args.method}):  PSNR: {metrics[f'Ours_{args.method.upper()}']['PSNR']:.2f}, SSIM: {metrics[f'Ours_{args.method.upper()}']['SSIM']:.4f}")
+            print(f"PSNR: {res['PSNR']:.2f}, SSIM: {res['SSIM']:.4f}")
             print("="*40)
             
             with open(os.path.join(quant_out_dir, "evaluation_metrics.json"), "w") as f:
