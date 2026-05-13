@@ -251,33 +251,6 @@ The final SOTA inpainted video frames and the tracking evaluation metrics (track
 
 ## Part 3: Exploration - Generative Video Inpainting
 
-In this exploration phase, we attempt to address the limitations of pure propagation-based inpainting models (like ProPainter) by introducing Generative AI (Stable Diffusion). The core idea is to generatively repair missing keyframes and use the "Injection Trick" to propagate these high-fidelity hallucinations to adjacent frames.
-
-We designed a **Dual-Track Evaluation Pipeline**:
-1. **Qualitative Track (Dynamic Mask):** Uses GT dynamic masks to evaluate visual harmony.
-2. **Quantitative Track (Stationary Mask):** Uses synthetically generated random stationary masks on clean videos to force "information starvation" and evaluate structural similarity (SSIM) and peak signal-to-noise ratio (PSNR) against Ground Truth.
-
-### Code Explanation
-- `part3_exploration/main.py`: The orchestrator script. It provides arguments to seamlessly switch between Qualitative and Quantitative evaluation tracks, manages isolated workspaces, and extracts specific frames for direct metric comparison.
-- `part3_exploration/run_davis.py`: The batch processing evaluator. It iterates through the DAVIS dataset, injects GT masks, applies boundary dilation, and runs side-by-side upper-bound comparisons.
-- `utils/diffusion_utils.py`: Contains the `run_sd_inpainting` function. It executes the Stable Diffusion pipeline and implements **Pre-Generation Dilation** (to avoid motion blur residues) and **Gaussian Feathering Blending** to soften the hard edges of generative patches.
-- `utils/mask_utils.py`: Generates the random stationary masks (combinations of strokes and circles) used exclusively for the quantitative evaluation track.
-
-### How to Run
-Navigate to the project root directory before executing.
-
-**1. Qualitative Evaluation (Visual Testing with Dynamic Masks)**
-For `tennis`:
-```bash
-这里为你整理了全新、完整且逻辑完美闭环的 Part 3 README 部分。
-
-这段内容直接替换你 README.md 中原有的 ## Part 3: Exploration - Generative Video Inpainting 及其之后的所有内容。它整合了我们刚才优化的所有亮点：解耦的命令行参数控制、DiffuEraser 的防爆环境配置，以及最王炸的 DAVIS GT 上限评测（Upper-Bound Evaluation）。
-
-你可以直接复制以下 Markdown 代码：
-
-Markdown
-## Part 3: Exploration - Generative Video Inpainting
-
 In this exploration phase, we attempt to address the limitations of pure propagation-based inpainting models (like ProPainter) by introducing Generative AI (Stable Diffusion & DiffuEraser). The core idea is to generatively repair missing backgrounds and leverage deep semantic understanding for complex occlusion scenarios.
 
 We designed a **Comprehensive Evaluation Pipeline** consisting of two main components:
