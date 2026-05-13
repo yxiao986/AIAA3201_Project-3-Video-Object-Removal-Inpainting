@@ -244,3 +244,55 @@ Surprisingly, our empirical results indicate that introducing Stable Diffusion v
 | | Ours (SD + ProPainter) | 22.57 | 0.7540 |
 | **BMX-Trees** | Baseline (Pure ProPainter) | **24.99** | **0.8342** |
 | | Ours (SD + ProPainter) | 22.79 | 0.7671 |
+
+### Advanced Exploration: Video Diffusion with DiffuEraser (Ultimate SOTA)
+
+To push the boundaries of our video inpainting pipeline, we integrated **DiffuEraser**, a state-of-the-art conditional video diffusion model. Unlike traditional propagation methods or 2D SD injection, DiffuEraser leverages Temporal Attention and a specialized BrushNet to deeply understand semantics and generate highly coherent backgrounds, solving complex occlusion scenarios.
+
+#### 1. Setup & Weights Configuration
+
+To ensure a smooth and error-free evaluation experience for the TAs, avoiding complex HuggingFace network dependencies and hard-coded path issues, we have bundled all necessary pre-trained weights.
+
+**Step 1: Clone the Official Repository**
+```bash
+cd third_party
+git clone [https://github.com/lixiaowen-xw/diffueraser.git](https://github.com/lixiaowen-xw/diffueraser.git) DiffuEraser
+cd ..
+```
+Step 2: Quick Weights Setup (⚡ Highly Recommended)
+Please download  weights.zip follow the instruction
+
+To ensure the native DiffuEraser code runs flawlessly, your directory structure must look exactly like this:
+```Plaintext
+third_party/DiffuEraser/
+├── weights/
+│   ├── diffuEraser/              # Core BrushNet & UNet configurations
+│   ├── PCM_Weights/              # Phased Consistency Model (Acceleration LoRA)
+│   ├── propainter/               # ProPainter core weights
+│   ├── sd-vae-ft-mse/            # VAE model
+│   └── stable-diffusion-v1-5/    # SD 1.5 Base Model
+├── run_diffueraser.py
+└── ...
+```
+
+2. How to Run DiffuEraser (Dual-Track Evaluation)
+We have seamlessly integrated DiffuEraser into our unified evaluation orchestrator (main.py). By passing both --gt_data_dir and --clean_data_dir, the pipeline will automatically perform both qualitative generation and quantitative metric testing (PSNR & SSIM) in a single run.
+
+Execution Command (Example on BMX-Trees):
+```bash
+python part3_exploration/main.py \
+  --dataset_name bmx-trees \
+  --prompt "a clean graffiti wall" \
+  --gt_data_dir data/bmx-trees \
+  --gt_mask_dir data/bmx-trees_mask \
+  --clean_data_dir data/bmx-trees \
+  --method diffueraser
+```
+
+**Quantitative Results (Stationary Mask Evaluation)**
+| Dataset | Method | PSNR | SSIM |
+| :--- | :--- | :--- | :--- |
+| **Tennis** | Baseline (Pure ProPainter) | **24.37** | **0.7973** |
+| | Ours (SD + ProPainter) | 20.45 | 0.6758 |
+| **BMX-Trees** | Baseline (Pure ProPainter) | **25.76** | **0.8544** |
+| | Ours (SD + ProPainter) | 19.66 | 0.5609 |
